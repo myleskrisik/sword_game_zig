@@ -2,11 +2,99 @@ const std = @import("std");
 const rl = @cImport(@cInclude("raylib.h"));
 
 const Subpixel = struct {
-    const SUBPIXEL_BITS = 4;
-    sp: i32 = 0,
+    const SUBPIXEL_BITS = 6;
+    const SCALING_FACTOR = std.math.pow(i32, 2, SUBPIXEL_BITS);
 
-    pub fn getPixels(self: Subpixel) i32 {
-        return self.sp >> SUBPIXEL_BITS;
+    floating_point_representation: i32 = 0,
+
+    pub fn as_int(self: Subpixel) i32 {
+        return self.floating_point_representation >> SUBPIXEL_BITS;
+    }
+
+    pub fn as_float(self: Subpixel) f32 {
+        return @as(f32, @floatFromInt(self.floating_point_representation)) / SCALING_FACTOR;
+    }
+
+    pub fn from_int(int: i32) Subpixel {
+        return Subpixel{ .floating_point_representation = int << SUBPIXEL_BITS };
+    }
+
+    pub fn from_float(float: f32) Subpixel {
+        return Subpixel{ .floating_point_representation = @intFromFloat(float * SCALING_FACTOR) };
+    }
+};
+
+const Position = struct { x: Subpixel = Subpixel.from_int(0), y: Subpixel = Subpixel.from_int(0) };
+const Velocity = struct {
+    const sign = std.math.sign;
+    x: Subpixel = Subpixel.from_int(0),
+    y: Subpixel = Subpixel.from_int(0),
+    pub fn changing_direction(self: Velocity, inputs: [2]f32) [2]bool {
+        const x_vel_sign = sign(self.x.as_float());
+        const y_vel_sign = sign(self.y.as_float());
+        const x_input_sign = sign(inputs[0]);
+        const y_input_sign = sign(inputs[1]);
+
+        const x_changing_dirs = if (x_vel_sign == 0 or x_input_sign == 0) false else x_vel_sign != x_input_sign;
+        const y_changing_dirs = if (y_vel_sign == 0 or y_input_sign == 0) false else y_vel_sign != y_input_sign;
+        return .{ x_changing_dirs, y_changing_dirs };
+    }
+};
+
+const Player = struct {
+    const ACCELERATION = 8;
+    const CHANGING_DIRECTION_ACCELERATION = 40;
+    const FRICTION = 3;
+    const MAX_VELOCITY = 240;
+    position: Position,
+    velocity: Velocity,
+    sprite: rl.struct_Texture,
+
+    pub fn init(sprite: rl.struct_Texture) Player {
+        return Player{ .position = Position{}, .sprite = sprite, .velocity = Velocity{} };
+    }
+
+    fn get_movement_inputs() [2]f32 {
+        var x_input: f32 = 0.0;
+        var y_input: f32 = 0.0;
+        if (rl.IsKeyDown(rl.KEY_W)) {
+            y_input -= 1.0;
+        }
+        if (rl.IsKeyDown(rl.KEY_S)) {
+            y_input += 1.0;
+        }
+        if (rl.IsKeyDown(rl.KEY_A)) {
+            x_input -= 1.0;
+        }
+        if (rl.IsKeyDown(rl.KEY_D)) {
+            x_input += 1.0;
+        }
+        const vec = rl.Vector2{ .x = x_input, .y = y_input };
+        const squared_elements_sum = if (vec.x == 0.0) 0 else std.math.pow(f32, vec.x, 2) + if (vec.y == 0.0) 0 else std.math.pow(f32, vec.y, 2);
+        const vec_magnitude = @sqrt(squared_elements_sum);
+        return if (vec_magnitude == 0) .{ 0, 0 } else .{ vec.x / vec_magnitude, vec.y / vec_magnitude };
+    }
+
+    pub fn calculate_acceleration(self: Player) [2]Subpixel {
+        var accel: [2]Subpixel = .{ .{}, .{} };
+        const inputs = Player.get_movement_inputs();
+        const changing_directions = self.velocity.changing_direction(inputs);
+        if (@abs(self.position.x.floating_point_representation) < Player.MAX_VELOCITY) {
+            accel[0].floating_point_representation = if (changing_directions[0]) Player.CHANGING_DIRECTION_ACCELERATION else Player.ACCELERATION;
+            accel[0].floating_point_representation *= Subpixel.from_float(inputs[0]).floating_point_representation;
+        }
+
+        if (@abs(self.position.x.floating_point_representation) < Player.MAX_VELOCITY) {
+            accel[1].floating_point_representation = if (changing_directions[1]) Player.CHANGING_DIRECTION_ACCELERATION else Player.ACCELERATION;
+            accel[1].floating_point_representation *= Subpixel.from_float(inputs[1]).floating_point_representation;
+        }
+        return accel;
+    }
+
+    pub fn update_position(self: *Player) void {
+        const acceleration = self.calculate_acceleration();
+        self.position.x.floating_point_representation += acceleration[0].floating_point_representation;
+        self.position.y.floating_point_representation += acceleration[1].floating_point_representation;
     }
 };
 
@@ -38,9 +126,8 @@ pub fn main() !void {
     const camera_y: f32 = 0;
 
     rl.SetTargetFPS(60);
-
     const player_sprite = rl.LoadTexture("player.png");
-    const player_positon = .{ Subpixel{}, Subpixel{} };
+    var player = Player.init(player_sprite);
     defer rl.UnloadTexture(player_sprite);
 
     while (!rl.WindowShouldClose()) {
@@ -54,6 +141,7 @@ pub fn main() !void {
         screen_space_camera.target.y -= world_space_camera.target.y;
         screen_space_camera.target.y *= virtual_ratio;
 
+        player.update_position();
         // Draw worldspace
         {
             rl.BeginTextureMode(target);
@@ -61,7 +149,7 @@ pub fn main() !void {
             rl.ClearBackground(rl.WHITE);
             {
                 rl.BeginMode2D(world_space_camera);
-                rl.DrawTexture(player_sprite, player_positon[0].getPixels(), player_positon[1].getPixels(), rl.WHITE);
+                rl.DrawTexture(player_sprite, player.position.x.as_int(), player.position.x.as_int(), rl.WHITE);
                 defer rl.EndMode2D();
             }
         }
