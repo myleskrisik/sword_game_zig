@@ -42,7 +42,7 @@ const Velocity = struct {
 };
 
 const Player = struct {
-    const ACCELERATION = 8;
+    const ACCELERATION = 2;
     const CHANGING_DIRECTION_ACCELERATION = 40;
     const FRICTION = 3;
     const MAX_VELOCITY = 240;
@@ -75,9 +75,8 @@ const Player = struct {
         return if (vec_magnitude == 0) .{ 0, 0 } else .{ vec.x / vec_magnitude, vec.y / vec_magnitude };
     }
 
-    pub fn calculate_acceleration(self: Player) [2]Subpixel {
+    pub fn calculate_acceleration(self: Player, inputs: [2]f32) [2]Subpixel {
         var accel: [2]Subpixel = .{ .{}, .{} };
-        const inputs = Player.get_movement_inputs();
         const changing_directions = self.velocity.changing_direction(inputs);
         if (@abs(self.position.x.floating_point_representation) < Player.MAX_VELOCITY) {
             accel[0].floating_point_representation = if (changing_directions[0]) Player.CHANGING_DIRECTION_ACCELERATION else Player.ACCELERATION;
@@ -91,10 +90,14 @@ const Player = struct {
         return accel;
     }
 
+    pub fn apply_acceleration(self: *Player, acceleration: [2]Subpixel) void {
+        self.velocity.x.floating_point_representation += acceleration[0].floating_point_representation;
+        self.velocity.y.floating_point_representation += acceleration[1].floating_point_representation;
+    }
+
     pub fn update_position(self: *Player) void {
-        const acceleration = self.calculate_acceleration();
-        self.position.x.floating_point_representation += acceleration[0].floating_point_representation;
-        self.position.y.floating_point_representation += acceleration[1].floating_point_representation;
+        self.position.x.floating_point_representation += self.velocity.x.floating_point_representation;
+        self.position.y.floating_point_representation += self.velocity.x.floating_point_representation;
     }
 };
 
@@ -131,17 +134,24 @@ pub fn main() !void {
     defer rl.UnloadTexture(player_sprite);
 
     while (!rl.WindowShouldClose()) {
-        screen_space_camera.target = rl.Vector2{ .x = camera_x, .y = camera_y };
+        // Update
+        {
+            screen_space_camera.target = rl.Vector2{ .x = camera_x, .y = camera_y };
 
-        world_space_camera.target.x = screen_space_camera.target.x;
-        screen_space_camera.target.x -= world_space_camera.target.x;
-        screen_space_camera.target.x *= virtual_ratio;
+            world_space_camera.target.x = screen_space_camera.target.x;
+            screen_space_camera.target.x -= world_space_camera.target.x;
+            screen_space_camera.target.x *= virtual_ratio;
 
-        world_space_camera.target.y = screen_space_camera.target.y;
-        screen_space_camera.target.y -= world_space_camera.target.y;
-        screen_space_camera.target.y *= virtual_ratio;
+            world_space_camera.target.y = screen_space_camera.target.y;
+            screen_space_camera.target.y -= world_space_camera.target.y;
+            screen_space_camera.target.y *= virtual_ratio;
 
-        player.update_position();
+            const inputs = Player.get_movement_inputs();
+            const acceleration = player.calculate_acceleration(inputs);
+            std.debug.print("inputs {any} acceleration {any}\n", .{ inputs, acceleration });
+            player.apply_acceleration(acceleration);
+            player.update_position();
+        }
         // Draw worldspace
         {
             rl.BeginTextureMode(target);
