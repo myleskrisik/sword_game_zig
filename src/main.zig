@@ -25,11 +25,14 @@ const Subpixel = struct {
 };
 
 const Position = struct { x: Subpixel = Subpixel.from_int(0), y: Subpixel = Subpixel.from_int(0) };
+
 const Velocity = struct {
-    const sign = std.math.sign;
-    x: Subpixel = Subpixel.from_int(0),
-    y: Subpixel = Subpixel.from_int(0),
+    x: Subpixel = .{},
+    y: Subpixel = .{},
+
     pub fn changing_direction(self: Velocity, inputs: [2]f32) [2]bool {
+        const sign = std.math.sign;
+
         const x_vel_sign = sign(self.x.as_float());
         const y_vel_sign = sign(self.y.as_float());
         const x_input_sign = sign(inputs[0]);
@@ -39,6 +42,10 @@ const Velocity = struct {
         const y_changing_dirs = if (y_vel_sign == 0 or y_input_sign == 0) false else y_vel_sign != y_input_sign;
         return .{ x_changing_dirs, y_changing_dirs };
     }
+
+    pub fn apply_friction(inputs: [2]f32, friction: Subpixel) void {
+        if (inputs[0] )
+    }
 };
 
 const Player = struct {
@@ -46,6 +53,7 @@ const Player = struct {
     const CHANGING_DIRECTION_ACCELERATION = 40;
     const FRICTION = 3;
     const MAX_VELOCITY = 240;
+
     position: Position,
     velocity: Velocity,
     sprite: rl.struct_Texture,
@@ -57,6 +65,7 @@ const Player = struct {
     fn get_movement_inputs() [2]f32 {
         var x_input: f32 = 0.0;
         var y_input: f32 = 0.0;
+
         if (rl.IsKeyDown(rl.KEY_W)) {
             y_input -= 1.0;
         }
@@ -69,6 +78,7 @@ const Player = struct {
         if (rl.IsKeyDown(rl.KEY_D)) {
             x_input += 1.0;
         }
+
         const vec = rl.Vector2{ .x = x_input, .y = y_input };
         const squared_elements_sum = if (vec.x == 0.0) 0 else std.math.pow(f32, vec.x, 2) + if (vec.y == 0.0) 0 else std.math.pow(f32, vec.y, 2);
         const vec_magnitude = @sqrt(squared_elements_sum);
